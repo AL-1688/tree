@@ -16,6 +16,13 @@
         <span>仓库列表</span>
       </router-link>
 
+      <router-link to="/search" class="nav-item" active-class="active">
+        <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
+          <path d="M10.68 11.74a6 6 0 01-7.922-8.984 6 6 0 018.984 7.922l3.04 3.04a.749.749 0 01-.326 1.275.749.749 0 01-.734-.215l-3.04-3.04zm-5.354-1.275a4.5 4.5 0 106.364-6.364 4.5 4.5 0 01-6.364 6.364z"></path>
+        </svg>
+        <span>探索项目</span>
+      </router-link>
+
       <router-link to="/settings" class="nav-item" active-class="active">
         <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
           <path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0zm7.25-3.25a.75.75 0 00-1.5 0v3.5c0 .199.079.39.22.53l2 2a.75.75 0 101.06-1.06l-1.78-1.78V4.75z"></path>

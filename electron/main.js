@@ -183,6 +183,63 @@ ipcMain.handle('api:updateFile', async (event, params) => {
   return await gitHubAPI.updateFile(params)
 })
 
+// 搜索相关
+ipcMain.handle('api:searchRepositories', async (event, params) => {
+  if (!gitHubAPI) {
+    throw new Error('Not authenticated')
+  }
+  return await gitHubAPI.searchRepositories(params)
+})
+
+ipcMain.handle('api:forkRepository', async (event, owner, repo) => {
+  if (!gitHubAPI) {
+    throw new Error('Not authenticated')
+  }
+  return await gitHubAPI.forkRepository(owner, repo)
+})
+
+// 下载相关
+ipcMain.handle('download:gitClone', async (event, cloneUrl, targetPath) => {
+  const { exec } = require('child_process')
+  const path = require('path')
+
+  return new Promise((resolve, reject) => {
+    exec(`git clone ${cloneUrl} "${targetPath}"`, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`Git clone failed: ${error.message}`))
+      } else {
+        resolve({ success: true, path: targetPath })
+      }
+    })
+  })
+})
+
+ipcMain.handle('download:downloadZip', async (event, repoUrl, targetPath) => {
+  const https = require('https')
+  const fs = require('fs')
+  const path = require('path')
+
+  const zipUrl = `${repoUrl}/archive/refs/heads/main.zip`
+
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(targetPath)
+    https.get(zipUrl, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Download failed with status ${response.statusCode}`))
+        return
+      }
+      response.pipe(file)
+      file.on('finish', () => {
+        file.close()
+        resolve({ success: true, path: targetPath })
+      })
+    }).on('error', (err) => {
+      fs.unlink(targetPath)
+      reject(err)
+    })
+  })
+})
+
 // 文件系统相关
 ipcMain.handle('fs:selectFolder', async () => {
   const folderReader = new FolderReader()

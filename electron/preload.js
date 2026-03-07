@@ -21,7 +21,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFileContent: (params) => ipcRenderer.invoke('api:getFileContent', params),
     uploadFile: (params) => ipcRenderer.invoke('api:uploadFile', params),
     deleteFile: (params) => ipcRenderer.invoke('api:deleteFile', params),
-    updateFile: (params) => ipcRenderer.invoke('api:updateFile', params)
+    updateFile: (params) => ipcRenderer.invoke('api:updateFile', params),
+    searchRepositories: (params) => ipcRenderer.invoke('api:searchRepositories', params),
+    forkRepository: (owner, repo) => ipcRenderer.invoke('api:forkRepository', owner, repo)
+  },
+
+  // 下载相关
+  download: {
+    gitClone: (cloneUrl, targetPath) => ipcRenderer.invoke('download:gitClone', cloneUrl, targetPath),
+    downloadZip: (repoUrl, targetPath) => ipcRenderer.invoke('download:downloadZip', repoUrl, targetPath)
   },
 
   // 文件系统
