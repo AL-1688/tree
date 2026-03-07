@@ -43,5 +43,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: (key) => ipcRenderer.invoke('storage:get', key),
     set: (key, value) => ipcRenderer.invoke('storage:set', key, value),
     delete: (key) => ipcRenderer.invoke('storage:delete', key)
+  },
+
+  // 缓存管理
+  cache: {
+    get: (key) => ipcRenderer.invoke('cache:get', key),
+    set: (key, data, ttl) => ipcRenderer.invoke('cache:set', key, data, ttl),
+    delete: (key) => ipcRenderer.invoke('cache:delete', key),
+    clear: () => ipcRenderer.invoke('cache:clear'),
+    cleanup: () => ipcRenderer.invoke('cache:cleanup'),
+    stats: () => ipcRenderer.invoke('cache:stats')
+  },
+
+  // 大文件上传
+  upload: {
+    largeFile: (params) => ipcRenderer.invoke('upload:largeFile', params),
+    multipleFiles: (params) => ipcRenderer.invoke('upload:multipleFiles', params),
+    fromBuffer: (params) => ipcRenderer.invoke('upload:fromBuffer', params),
+    checkSize: (filePath) => ipcRenderer.invoke('upload:checkSize', filePath),
+    onProgress: (callback) => {
+      ipcRenderer.on('upload:progress', (event, progress) => callback(progress))
+    },
+    removeProgressListener: () => {
+      ipcRenderer.removeAllListeners('upload:progress')
+    }
   }
 })

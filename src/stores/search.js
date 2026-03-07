@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import {
+  generateCacheKey,
+  fetchWithCache,
+  DEFAULT_TTL
+} from '../utils/cache'
 
 export const useSearchStore = defineStore('search', () => {
   const query = ref('')
@@ -16,8 +21,8 @@ export const useSearchStore = defineStore('search', () => {
     total: 0
   })
 
-  // 搜索仓库
-  async function searchRepositories(searchQuery) {
+  // 搜索仓库（带缓存）
+  async function searchRepositories(searchQuery, forceRefresh = false) {
     if (searchQuery) {
       query.value = searchQuery
     }
@@ -39,12 +44,19 @@ export const useSearchStore = defineStore('search', () => {
         q += ` stars:${filters.value.stars}`
       }
 
-      const data = await window.electronAPI.api.searchRepositories({
-        q,
-        sort: filters.value.sort,
-        per_page: pagination.value.perPage,
-        page: pagination.value.page
-      })
+      const cacheKey = generateCacheKey('search', q, filters.value.sort, pagination.value.page)
+
+      const data = await fetchWithCache(
+        cacheKey,
+        () => window.electronAPI.api.searchRepositories({
+          q,
+          sort: filters.value.sort,
+          per_page: pagination.value.perPage,
+          page: pagination.value.page
+        }),
+        DEFAULT_TTL.searchResults,
+        forceRefresh
+      )
 
       results.value = data.items || []
       pagination.value.total = data.total_count || 0

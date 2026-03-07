@@ -53,6 +53,37 @@
         </button>
       </div>
 
+      <!-- 缓存管理 -->
+      <div class="settings-section">
+        <h2>缓存管理</h2>
+        <p class="section-desc">
+          管理离线缓存数据，提高应用响应速度。
+        </p>
+
+        <div class="cache-stats" v-if="cacheStats">
+          <div class="stat-item">
+            <span class="stat-label">缓存条目</span>
+            <span class="stat-value">{{ cacheStats.count }} 个</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">缓存大小</span>
+            <span class="stat-value">{{ formatSize(cacheStats.totalSize) }}</span>
+          </div>
+        </div>
+
+        <div class="cache-actions">
+          <button @click="refreshCacheStats" class="btn-secondary" :disabled="cacheLoading">
+            {{ cacheLoading ? '加载中...' : '刷新统计' }}
+          </button>
+          <button @click="cleanupCache" class="btn-secondary" :disabled="cacheLoading">
+            清理过期缓存
+          </button>
+          <button @click="clearAllCache" class="btn-danger" :disabled="cacheLoading">
+            清空所有缓存
+          </button>
+        </div>
+      </div>
+
       <!-- 上传设置 -->
       <div class="settings-section">
         <h2>上传设置</h2>
@@ -74,6 +105,26 @@
           </div>
           <div class="setting-control">
             <input v-model.number="maxConcurrency" type="number" min="1" max="10" />
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <h3>大文件阈值</h3>
+            <p>超过此大小将启用分块上传（MB）</p>
+          </div>
+          <div class="setting-control">
+            <input v-model.number="chunkThreshold" type="number" min="1" max="100" />
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <h3>分块大小</h3>
+            <p>大文件上传时的分块大小（KB）</p>
+          </div>
+          <div class="setting-control">
+            <input v-model.number="chunkSize" type="number" min="64" max="1024" />
           </div>
         </div>
 
@@ -115,7 +166,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
-import { shell } from 'electron'
+import { getCacheStats, cleanupCache, clearCache } from '../utils/cache'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -127,6 +178,10 @@ const oauthConfig = ref({
 })
 const defaultBranch = ref('main')
 const maxConcurrency = ref(5)
+const chunkThreshold = ref(5)
+const chunkSize = ref(256)
+const cacheStats = ref(null)
+const cacheLoading = ref(false)
 
 onMounted(async () => {
   theme.value = settingsStore.theme
@@ -138,6 +193,16 @@ onMounted(async () => {
   if (savedConfig) {
     oauthConfig.value = savedConfig
   }
+
+  // 加载上传设置
+  const uploadSettings = await window.electronAPI.storage.get('upload_settings')
+  if (uploadSettings) {
+    chunkThreshold.value = uploadSettings.chunkThreshold || 5
+    chunkSize.value = uploadSettings.chunkSize || 256
+  }
+
+  // 加载缓存统计
+  await refreshCacheStats()
 })
 
 async function updateTheme() {
@@ -157,6 +222,10 @@ async function saveUploadSettings() {
   try {
     await settingsStore.setDefaultBranch(defaultBranch.value)
     await settingsStore.setMaxConcurrency(maxConcurrency.value)
+    await window.electronAPI.storage.set('upload_settings', {
+      chunkThreshold: chunkThreshold.value,
+      chunkSize: chunkSize.value
+    })
     alert('上传设置已保存')
   } catch (error) {
     alert('保存失败: ' + error.message)
@@ -164,13 +233,62 @@ async function saveUploadSettings() {
 }
 
 function openOAuthGuide() {
-  shell.openExternal('https://docs.github.com/en/developers/apps/building-oauth-apps/creating-an-oauth-app')
+  window.electronAPI.shell?.openExternal?.('https://docs.github.com/en/developers/apps/building-oauth-apps/creating-an-oauth-app')
 }
 
 async function handleLogout() {
   if (confirm('确定要退出登录吗?')) {
     await authStore.logout()
   }
+}
+
+async function refreshCacheStats() {
+  cacheLoading.value = true
+  try {
+    cacheStats.value = await getCacheStats()
+  } catch (error) {
+    console.error('Failed to get cache stats:', error)
+  } finally {
+    cacheLoading.value = false
+  }
+}
+
+async function cleanupCache() {
+  if (!confirm('确定要清理过期缓存吗?')) return
+
+  cacheLoading.value = true
+  try {
+    const result = await cleanupCache()
+    alert(`已清理 ${result.removed} 个过期缓存`)
+    await refreshCacheStats()
+  } catch (error) {
+    alert('清理失败: ' + error.message)
+  } finally {
+    cacheLoading.value = false
+  }
+}
+
+async function clearAllCache() {
+  if (!confirm('确定要清空所有缓存吗? 这将删除所有离线数据。')) return
+
+  cacheLoading.value = true
+  try {
+    await clearCache()
+    alert('缓存已清空')
+    await refreshCacheStats()
+  } catch (error) {
+    alert('清空失败: ' + error.message)
+  } finally {
+    cacheLoading.value = false
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 </script>
 
@@ -361,5 +479,58 @@ async function handleLogout() {
 
 .btn-secondary:hover {
   background: var(--border-color);
+}
+
+.btn-danger {
+  padding: 10px 20px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-danger:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cache-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 8px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #7f8c8d;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.cache-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 </style>

@@ -1,5 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  generateCacheKey,
+  fetchWithCache,
+  deleteCache,
+  DEFAULT_TTL
+} from '../utils/cache'
 
 export const useRepositoryStore = defineStore('repository', () => {
   const repositories = ref([])
@@ -42,16 +48,24 @@ export const useRepositoryStore = defineStore('repository', () => {
     return result
   })
 
-  // 获取仓库列表
-  async function fetchRepositories() {
+  // 获取仓库列表（带缓存）
+  async function fetchRepositories(forceRefresh = false) {
     loading.value = true
     try {
-      const data = await window.electronAPI.api.getRepositories({
-        type: filters.value.type,
-        sort: filters.value.sort,
-        per_page: pagination.value.perPage,
-        page: pagination.value.page
-      })
+      const cacheKey = generateCacheKey('repositories', filters.value.type, filters.value.sort, pagination.value.page)
+
+      const data = await fetchWithCache(
+        cacheKey,
+        () => window.electronAPI.api.getRepositories({
+          type: filters.value.type,
+          sort: filters.value.sort,
+          per_page: pagination.value.perPage,
+          page: pagination.value.page
+        }),
+        DEFAULT_TTL.repositories,
+        forceRefresh
+      )
+
       repositories.value = data
       pagination.value.total = data.length
     } catch (error) {
@@ -62,11 +76,19 @@ export const useRepositoryStore = defineStore('repository', () => {
     }
   }
 
-  // 获取单个仓库
-  async function fetchRepository(owner, repo) {
+  // 获取单个仓库（带缓存）
+  async function fetchRepository(owner, repo, forceRefresh = false) {
     loading.value = true
     try {
-      const data = await window.electronAPI.api.getRepository(owner, repo)
+      const cacheKey = generateCacheKey('repository', owner, repo)
+
+      const data = await fetchWithCache(
+        cacheKey,
+        () => window.electronAPI.api.getRepository(owner, repo),
+        DEFAULT_TTL.repository,
+        forceRefresh
+      )
+
       currentRepository.value = data
       return data
     } catch (error) {
@@ -82,6 +104,8 @@ export const useRepositoryStore = defineStore('repository', () => {
     try {
       const data = await window.electronAPI.api.createRepository(params)
       repositories.value.unshift(data)
+      // 清除仓库列表缓存
+      await clearRepositoriesCache()
       return data
     } catch (error) {
       console.error('Failed to create repository:', error)
@@ -97,6 +121,9 @@ export const useRepositoryStore = defineStore('repository', () => {
       if (index !== -1) {
         repositories.value[index] = data
       }
+      // 清除该仓库的缓存
+      await deleteCache(generateCacheKey('repository', owner, repo))
+      await clearRepositoriesCache()
       return data
     } catch (error) {
       console.error('Failed to update repository:', error)
@@ -109,10 +136,19 @@ export const useRepositoryStore = defineStore('repository', () => {
     try {
       await window.electronAPI.api.deleteRepository(owner, repo)
       repositories.value = repositories.value.filter(r => r.full_name !== `${owner}/${repo}`)
+      // 清除该仓库的缓存
+      await deleteCache(generateCacheKey('repository', owner, repo))
+      await clearRepositoriesCache()
     } catch (error) {
       console.error('Failed to delete repository:', error)
       throw error
     }
+  }
+
+  // 清除仓库列表缓存
+  async function clearRepositoriesCache() {
+    // 由于不知道具体的缓存键，使用清理过期缓存的方式
+    await window.electronAPI.cache.cleanup()
   }
 
   // 设置过滤器

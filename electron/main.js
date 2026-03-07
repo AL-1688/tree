@@ -4,11 +4,15 @@ const GitHubOAuth = require('./auth/github-oauth')
 const GitHubAPI = require('./api/github-api')
 const FolderReader = require('./fs/folder-reader')
 const LocalStorage = require('./storage/local-storage')
+const CacheManager = require('./cache/cache-manager')
+const ChunkUploader = require('./upload/chunk-uploader')
 
 let mainWindow
 let oAuth
 let gitHubAPI
+let cacheManager
 let localStorage
+let chunkUploader
 
 // 开发环境检测
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -45,6 +49,7 @@ function createWindow() {
   // 初始化模块
   oAuth = new GitHubOAuth()
   localStorage = new LocalStorage()
+  cacheManager = new CacheManager()
 }
 
 // 应用准备就绪
@@ -75,6 +80,7 @@ ipcMain.handle('auth:login', async (event, config) => {
     const result = await oAuth.authenticate()
     if (result.success) {
       gitHubAPI = new GitHubAPI(result.accessToken)
+      chunkUploader = new ChunkUploader(result.accessToken)
     }
     return result
   } catch (error) {
@@ -87,6 +93,7 @@ ipcMain.handle('auth:logout', async () => {
   try {
     await oAuth.logout()
     gitHubAPI = null
+    chunkUploader = null
     return { success: true }
   } catch (error) {
     return { success: false, error: error.message }
@@ -98,6 +105,7 @@ ipcMain.handle('auth:getStoredToken', async () => {
     const token = await oAuth.getStoredToken()
     if (token) {
       gitHubAPI = new GitHubAPI(token)
+      chunkUploader = new ChunkUploader(token)
     }
     return token
   } catch (error) {
@@ -262,4 +270,78 @@ ipcMain.handle('storage:set', async (event, key, value) => {
 
 ipcMain.handle('storage:delete', async (event, key) => {
   return await localStorage.delete(key)
+})
+
+// 缓存相关
+ipcMain.handle('cache:get', async (event, key) => {
+  return await cacheManager.get(key)
+})
+
+ipcMain.handle('cache:set', async (event, key, data, ttl) => {
+  await cacheManager.set(key, data, ttl)
+  return { success: true }
+})
+
+ipcMain.handle('cache:delete', async (event, key) => {
+  return await cacheManager.delete(key)
+})
+
+ipcMain.handle('cache:clear', async () => {
+  await cacheManager.clear()
+  return { success: true }
+})
+
+ipcMain.handle('cache:cleanup', async () => {
+  return await cacheManager.cleanup()
+})
+
+ipcMain.handle('cache:stats', async () => {
+  return cacheManager.getStats()
+})
+
+// 大文件上传相关
+ipcMain.handle('upload:largeFile', async (event, params) => {
+  if (!chunkUploader) {
+    throw new Error('Not authenticated')
+  }
+
+  // 进度回调通过 event.sender.send 发送给渲染进程
+  const onProgress = (progress) => {
+    event.sender.send('upload:progress', progress)
+  }
+
+  return await chunkUploader.uploadLargeFile(params, onProgress)
+})
+
+ipcMain.handle('upload:multipleFiles', async (event, params) => {
+  if (!chunkUploader) {
+    throw new Error('Not authenticated')
+  }
+
+  const onProgress = (progress) => {
+    event.sender.send('upload:progress', progress)
+  }
+
+  return await chunkUploader.uploadMultipleFiles(params, onProgress)
+})
+
+ipcMain.handle('upload:fromBuffer', async (event, params) => {
+  if (!chunkUploader) {
+    throw new Error('Not authenticated')
+  }
+
+  const onProgress = (progress) => {
+    event.sender.send('upload:progress', progress)
+  }
+
+  return await chunkUploader.uploadFromBuffer(params, onProgress)
+})
+
+ipcMain.handle('upload:checkSize', async (event, filePath) => {
+  const fs = require('fs').promises
+  const stats = await fs.stat(filePath)
+  return {
+    size: stats.size,
+    needChunkUpload: chunkUploader ? chunkUploader.needChunkUpload(stats.size) : false
+  }
 })
