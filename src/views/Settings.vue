@@ -166,7 +166,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useSettingsStore } from '../stores/settings'
-import { getCacheStats, cleanupCache, clearCache } from '../utils/cache'
+import { getCacheStats, cleanupCache as cleanupExpiredCache, clearCache } from '../utils/cache'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -258,7 +258,7 @@ async function cleanupCache() {
 
   cacheLoading.value = true
   try {
-    const result = await cleanupCache()
+    const result = await cleanupExpiredCache()
     alert(`已清理 ${result.removed} 个过期缓存`)
     await refreshCacheStats()
   } catch (error) {
