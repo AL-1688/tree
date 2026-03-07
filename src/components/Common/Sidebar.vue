@@ -51,8 +51,8 @@
 </template>
 
 <script setup>
-import { useAuthStore } from '../stores/auth'
-import { useSettingsStore } from '../stores/settings'
+import { useAuthStore } from '../../stores/auth'
+import { useSettingsStore } from '../../stores/settings'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
