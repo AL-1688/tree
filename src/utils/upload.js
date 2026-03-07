@@ -7,6 +7,18 @@
 const DEFAULT_THRESHOLD = 5 * 1024 * 1024 // 5MB
 
 /**
+ * 计算 Base64 编码内容的大小
+ */
+function getBase64Size(content) {
+  // 如果是字符串，先编码为 Base64
+  const base64 = typeof content === 'string'
+    ? btoa(unescape(encodeURIComponent(content)))
+    : content
+  // Base64 编码后大小约为原始数据的 4/3
+  return Math.floor(base64.length * 3 / 4)
+}
+
+/**
  * 检查文件是否需要分块上传
  */
 export async function checkFileSize(filePath) {
@@ -29,7 +41,7 @@ export async function uploadFile(params, onProgress) {
 
   // 如果是 Buffer 或字符串内容
   if (content !== undefined) {
-    const size = Buffer.byteLength(content)
+    const size = getBase64Size(content)
     const threshold = await getThreshold()
 
     if (size > threshold) {

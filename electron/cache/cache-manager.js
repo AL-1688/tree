@@ -185,14 +185,14 @@ class CacheManager {
     await this.init()
 
     let totalSize = 0
-    let totalFiles = this.metadata.size
+    let count = this.metadata.size
 
     for (const [, meta] of this.metadata) {
       totalSize += meta.size || 0
     }
 
     return {
-      totalFiles,
+      count,
       totalSize,
       totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
       cacheDir: this.cacheDir

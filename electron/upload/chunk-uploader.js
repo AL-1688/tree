@@ -14,13 +14,9 @@ class ChunkUploader {
     this.threshold = options.threshold || 5 * 1024 * 1024 // 默认 5MB 以上为大文件
     this.maxRetries = options.maxRetries || 3
     this.retryDelay = options.retryDelay || 1000
-  }
 
-  /**
-   * 创建请求客户端
-   */
-  createClient() {
-    return axios.create({
+    // 复用 axios 客户端实例
+    this.client = axios.create({
       baseURL: this.baseUrl,
       headers: {
         'Authorization': `token ${this.accessToken}`,
@@ -40,9 +36,7 @@ class ChunkUploader {
    * 创建 Git Blob
    */
   async createBlob(owner, repo, content, encoding = 'base64') {
-    const client = this.createClient()
-
-    const response = await client.post(`/repos/${owner}/${repo}/git/blobs`, {
+    const response = await this.client.post(`/repos/${owner}/${repo}/git/blobs`, {
       content,
       encoding
     })
@@ -54,9 +48,7 @@ class ChunkUploader {
    * 获取当前分支的最新 commit
    */
   async getRef(owner, repo, branch = 'main') {
-    const client = this.createClient()
-
-    const response = await client.get(`/repos/${owner}/${repo}/git/ref/heads/${branch}`)
+    const response = await this.client.get(`/repos/${owner}/${repo}/git/ref/heads/${branch}`)
     return response.data
   }
 
@@ -64,9 +56,7 @@ class ChunkUploader {
    * 创建 Tree
    */
   async createTree(owner, repo, baseTree, tree) {
-    const client = this.createClient()
-
-    const response = await client.post(`/repos/${owner}/${repo}/git/trees`, {
+    const response = await this.client.post(`/repos/${owner}/${repo}/git/trees`, {
       base_tree: baseTree,
       tree
     })
@@ -78,9 +68,7 @@ class ChunkUploader {
    * 创建 Commit
    */
   async createCommit(owner, repo, message, tree, parents) {
-    const client = this.createClient()
-
-    const response = await client.post(`/repos/${owner}/${repo}/git/commits`, {
+    const response = await this.client.post(`/repos/${owner}/${repo}/git/commits`, {
       message,
       tree,
       parents
@@ -93,9 +81,7 @@ class ChunkUploader {
    * 更新 Reference
    */
   async updateRef(owner, repo, branch, sha) {
-    const client = this.createClient()
-
-    const response = await client.patch(`/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
+    const response = await this.client.patch(`/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
       sha
     })
 
