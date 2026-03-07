@@ -162,6 +162,26 @@ class GitHubAPI {
     return response.data
   }
 
+  // ========== 搜索功能 ==========
+
+  async searchRepositories(params = {}) {
+    const { q, sort = 'best-match', order = 'desc', per_page = 30, page = 1 } = params
+
+    const response = await this.client.get('/search/repositories', {
+      params: { q, sort, order, per_page, page }
+    })
+    return response.data
+  }
+
+  async searchCode(params = {}) {
+    const { q, sort = 'best-match', order = 'desc', per_page = 30, page = 1 } = params
+
+    const response = await this.client.get('/search/code', {
+      params: { q, sort, order, per_page, page }
+    })
+    return response.data
+  }
+
   // 批量上传文件
   async uploadFiles(files, onProgress) {
     const results = []
@@ -174,6 +194,12 @@ class GitHubAPI {
       }
     }
     return results
+  }
+
+  // Fork 仓库
+  async forkRepository(owner, repo) {
+    const response = await this.client.post(`/repos/${owner}/${repo}/forks`)
+    return response.data
   }
 }
 
