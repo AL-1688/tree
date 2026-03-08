@@ -228,7 +228,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useUploadStore } from '../../stores/upload'
+import { useUploadStore } from '../stores/upload'
 import {
   Upload,
   Folder,
