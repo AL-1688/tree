@@ -146,11 +146,37 @@ class UploadManager extends EventEmitter {
    */
   async readFolderFiles(folderPath, targetPath) {
     const files = []
+    const MAX_DEPTH = 50  // 最大目录深度
+    const MAX_FILES = 10000  // 最大文件数量
 
-    const readDir = async (dirPath, relativePath = '') => {
-      const entries = await fs.readdir(dirPath, { withFileTypes: true })
+    const readDir = async (dirPath, relativePath = '', depth = 0) => {
+      // 检查深度限制
+      if (depth > MAX_DEPTH) {
+        console.warn(`Max directory depth (${MAX_DEPTH}) reached: ${dirPath}`)
+        return
+      }
+
+      // 检查文件数量限制
+      if (files.length >= MAX_FILES) {
+        console.warn(`Max files limit (${MAX_FILES}) reached`)
+        return
+      }
+
+      let entries
+      try {
+        entries = await fs.readdir(dirPath, { withFileTypes: true })
+      } catch (error) {
+        console.warn(`Failed to read directory: ${dirPath}`, error.message)
+        return
+      }
 
       for (const entry of entries) {
+        // 检查文件数量限制
+        if (files.length >= MAX_FILES) {
+          console.warn(`Max files limit (${MAX_FILES}) reached`)
+          return
+        }
+
         const fullEntryPath = path.join(dirPath, entry.name)
         const relativeEntryPath = path.join(relativePath, entry.name)
 
@@ -160,15 +186,19 @@ class UploadManager extends EventEmitter {
         }
 
         if (entry.isDirectory()) {
-          await readDir(fullEntryPath, relativeEntryPath)
+          await readDir(fullEntryPath, relativeEntryPath, depth + 1)
         } else if (entry.isFile()) {
-          const stat = await fs.stat(fullEntryPath)
-          files.push({
-            name: entry.name,
-            fullPath: fullEntryPath,
-            relativePath: relativeEntryPath,
-            size: stat.size
-          })
+          try {
+            const stat = await fs.stat(fullEntryPath)
+            files.push({
+              name: entry.name,
+              fullPath: fullEntryPath,
+              relativePath: relativeEntryPath,
+              size: stat.size
+            })
+          } catch (error) {
+            console.warn(`Failed to stat file: ${fullEntryPath}`, error.message)
+          }
         }
       }
     }
@@ -263,7 +293,12 @@ class UploadManager extends EventEmitter {
     if (this.isRunning) return
     this.isRunning = true
 
-    while (!this.queue.isEmpty()) {
+    // 添加最大迭代次数限制，防止极端情况下的无限循环
+    const MAX_ITERATIONS = 100000
+    let iterations = 0
+
+    while (!this.queue.isEmpty() && iterations < MAX_ITERATIONS) {
+      iterations++
       const item = this.queue.dequeue()
       if (!item) break
 
@@ -276,10 +311,20 @@ class UploadManager extends EventEmitter {
       const slotId = await this.concurrencyController.acquireSlot()
       this.currentProcessingCount++
 
-      // 异步处理单个文件
+      // 异步处理单个文件，添加错误通知
       this.processFile(task, item, slotId).catch(error => {
         console.error('Error processing file:', error)
+        // 发送文件错误事件
+        this.emit('file:error', {
+          taskId: item.taskId,
+          filePath: item.path,
+          error: error.message
+        })
       })
+    }
+
+    if (iterations >= MAX_ITERATIONS) {
+      console.warn('Process queue reached max iterations limit')
     }
 
     this.isRunning = false
