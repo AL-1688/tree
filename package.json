@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:start": "electron ."
@@ -41,6 +44,7 @@
     "electron": "^40.8.0",
     "electron-builder": "^26.8.1",
     "vite": "^7.3.1",
+    "vitest": "^4.0.18",
     "wait-on": "^8.0.2"
   },
   "build": {
