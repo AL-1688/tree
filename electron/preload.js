@@ -55,14 +55,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stats: () => ipcRenderer.invoke('cache:stats')
   },
 
-  // 大文件上传
+  // 上传管理
   upload: {
+    // 任务管理
+    createTask: (params) => ipcRenderer.invoke('upload:createTask', params),
+    startTask: (taskId) => ipcRenderer.invoke('upload:startTask', taskId),
+    pauseTask: (taskId) => ipcRenderer.invoke('upload:pauseTask', taskId),
+    resumeTask: (taskId) => ipcRenderer.invoke('upload:resumeTask', taskId),
+    cancelTask: (taskId) => ipcRenderer.invoke('upload:cancelTask', taskId),
+    retryFailed: (taskId, filePaths) => ipcRenderer.invoke('upload:retryFailed', taskId, filePaths),
+    getProgress: (taskId) => ipcRenderer.invoke('upload:getProgress', taskId),
+    getTasks: () => ipcRenderer.invoke('upload:getTasks'),
+    checkConflict: (params) => ipcRenderer.invoke('upload:checkConflict', params),
+    setConcurrency: (value) => ipcRenderer.invoke('upload:setConcurrency', value),
+
+    // 大文件上传
     largeFile: (params) => ipcRenderer.invoke('upload:largeFile', params),
     multipleFiles: (params) => ipcRenderer.invoke('upload:multipleFiles', params),
     fromBuffer: (params) => ipcRenderer.invoke('upload:fromBuffer', params),
     checkSize: (filePath) => ipcRenderer.invoke('upload:checkSize', filePath),
+
+    // 事件监听
     onProgress: (callback) => {
       ipcRenderer.on('upload:progress', (event, progress) => callback(progress))
+    },
+    onTaskComplete: (callback) => {
+      ipcRenderer.on('upload:taskComplete', (event, result) => callback(result))
+    },
+    onTaskError: (callback) => {
+      ipcRenderer.on('upload:taskError', (event, error) => callback(error))
     },
     removeProgressListener: () => {
       ipcRenderer.removeAllListeners('upload:progress')
