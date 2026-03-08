@@ -13,6 +13,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/upload',
+    name: 'UploadQueue',
+    component: () => import('../views/UploadQueuePage.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/repository/:owner/:repo',
     name: 'Repository',
     component: () => import('../views/RepositoryDetail.vue'),

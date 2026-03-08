@@ -91,9 +91,12 @@ export const useUploadStore = defineStore('upload', () => {
    */
   async function createTask(params) {
     try {
-      const task = await window.electronAPI.upload.createTask(params)
-      pendingTasks.value.push(task)
-      return task
+      const result = await window.electronAPI.upload.createTask(params)
+      if (result.success && result.task) {
+        pendingTasks.value.push(result.task)
+        return result
+      }
+      return result
     } catch (error) {
       console.error('Failed to create task:', error)
       throw error
@@ -325,6 +328,71 @@ export const useUploadStore = defineStore('upload', () => {
     completedTasks.value = []
   }
 
+  /**
+   * 加载任务列表
+   */
+  async function loadTasks() {
+    try {
+      const tasks = await window.electronAPI.upload.getTasks()
+      if (tasks && Array.isArray(tasks)) {
+        // 分类任务
+        const current = []
+        const pending = []
+        const completed = []
+
+        tasks.forEach(task => {
+          if (task.status === TaskStatus.RUNNING || task.status === TaskStatus.PAUSED) {
+            current.push(task)
+          } else if (task.status === TaskStatus.PENDING) {
+            pending.push(task)
+          } else {
+            completed.push(task)
+          }
+        })
+
+        currentTasks.value = current
+        pendingTasks.value = pending
+        completedTasks.value = completed
+      }
+    } catch (error) {
+      console.error('Failed to load tasks:', error)
+    }
+  }
+
+  /**
+   * 移除任务
+   */
+  function removeTask(taskId) {
+    // 从各个队列中移除
+    const currentIndex = currentTasks.value.findIndex(t => t.id === taskId)
+    if (currentIndex > -1) {
+      currentTasks.value.splice(currentIndex, 1)
+    }
+
+    const pendingIndex = pendingTasks.value.findIndex(t => t.id === taskId)
+    if (pendingIndex > -1) {
+      pendingTasks.value.splice(pendingIndex, 1)
+    }
+
+    const completedIndex = completedTasks.value.findIndex(t => t.id === taskId)
+    if (completedIndex > -1) {
+      completedTasks.value.splice(completedIndex, 1)
+    }
+  }
+
+  /**
+   * 检测冲突
+   */
+  async function checkConflict(taskId) {
+    try {
+      const result = await window.electronAPI.upload.checkConflict({ taskId })
+      return result
+    } catch (error) {
+      console.error('Failed to check conflict:', error)
+      throw error
+    }
+  }
+
   return {
     // 状态
     currentTasks,
@@ -360,6 +428,9 @@ export const useUploadStore = defineStore('upload', () => {
     expandPanel,
     getProgress,
     getAllTasks,
-    clearCompletedTasks
+    clearCompletedTasks,
+    loadTasks,
+    removeTask,
+    checkConflict
   }
 })
