@@ -7,6 +7,9 @@ import router from './router'
 import App from './App.vue'
 import './styles/main.css'
 
+// 浏览器兼容性：在非 Electron 环境中注入 mock API
+import './utils/browser-api.js'
+
 const app = createApp(App)
 
 // 注册所有 Element Plus 图标

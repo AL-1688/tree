@@ -13,7 +13,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import Login from './views/Login.vue'
@@ -24,6 +24,18 @@ const settingsStore = useSettingsStore()
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const theme = computed(() => settingsStore.theme)
+
+// 初始化应用
+onMounted(async () => {
+  try {
+    // 初始化设置
+    await settingsStore.init()
+    // 初始化认证状态
+    await authStore.init()
+  } catch (error) {
+    console.error('App initialization error:', error)
+  }
+})
 </script>
 
 <style>
