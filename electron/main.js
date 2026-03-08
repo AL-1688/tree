@@ -6,6 +6,7 @@ const FolderReader = require('./fs/folder-reader')
 const LocalStorage = require('./storage/local-storage')
 const CacheManager = require('./cache/cache-manager')
 const ChunkUploader = require('./upload/chunk-uploader')
+const UploadManager = require('./upload/upload-manager')
 
 let mainWindow
 let oAuth
@@ -13,6 +14,7 @@ let gitHubAPI
 let cacheManager
 let localStorage
 let chunkUploader
+let uploadManager
 
 // 开发环境检测
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -81,6 +83,12 @@ ipcMain.handle('auth:login', async (event, config) => {
     if (result.success) {
       gitHubAPI = new GitHubAPI(result.accessToken)
       chunkUploader = new ChunkUploader(result.accessToken)
+
+      // 更新上传管理器的 API 实例
+      if (uploadManager) {
+        uploadManager.setGitHubAPI(gitHubAPI)
+        uploadManager.setChunkUploader(chunkUploader)
+      }
     }
     return result
   } catch (error) {
@@ -94,6 +102,12 @@ ipcMain.handle('auth:logout', async () => {
     await oAuth.logout()
     gitHubAPI = null
     chunkUploader = null
+
+    // 清除上传管理器的 API 实例
+    if (uploadManager) {
+      uploadManager.setGitHubAPI(null)
+      uploadManager.setChunkUploader(null)
+    }
     return { success: true }
   } catch (error) {
     return { success: false, error: error.message }
@@ -106,6 +120,12 @@ ipcMain.handle('auth:getStoredToken', async () => {
     if (token) {
       gitHubAPI = new GitHubAPI(token)
       chunkUploader = new ChunkUploader(token)
+
+      // 更新上传管理器的 API 实例
+      if (uploadManager) {
+        uploadManager.setGitHubAPI(gitHubAPI)
+        uploadManager.setChunkUploader(chunkUploader)
+      }
     }
     return token
   } catch (error) {
@@ -343,5 +363,177 @@ ipcMain.handle('upload:checkSize', async (event, filePath) => {
   return {
     size: stats.size,
     needChunkUpload: chunkUploader ? chunkUploader.needChunkUpload(stats.size) : false
+  }
+})
+
+// ========== 上传管理 IPC 处理器 ==========
+
+// 初始化上传管理器
+async function initUploadManager() {
+  if (!uploadManager) {
+    uploadManager = new UploadManager({
+      maxConcurrency: 3,
+      largeFileThreshold: 50 * 1024 * 1024  // 50MB
+    })
+
+    // 设置事件回调
+    uploadManager.on('progress', (progress) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('upload:progress', progress)
+      }
+    })
+
+    uploadManager.on('task:complete', (task) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('upload:taskComplete', {
+          taskId: task.id,
+          status: 'completed',
+          stats: task.stats
+        })
+      }
+    })
+
+    uploadManager.on('task:error', (task) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('upload:taskError', {
+          taskId: task.id,
+          status: 'error',
+          stats: task.stats,
+          failedFiles: task.files.filter(f => f.status === 'failed').map(f => ({
+            path: f.path,
+            error: f.error
+          }))
+        })
+      }
+    })
+
+    uploadManager.on('file:progress', (data) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('upload:fileProgress', data)
+      }
+    })
+
+    await uploadManager.init()
+  }
+  return uploadManager
+}
+
+// 创建上传任务
+ipcMain.handle('upload:createTask', async (event, params) => {
+  try {
+    const manager = await initUploadManager()
+    const task = await manager.createTask(params)
+    return { success: true, task }
+  } catch (error) {
+    console.error('Create task error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 启动任务
+ipcMain.handle('upload:startTask', async (event, taskId) => {
+  try {
+    const manager = await initUploadManager()
+    await manager.startTask(taskId)
+    return { success: true }
+  } catch (error) {
+    console.error('Start task error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 暂停任务
+ipcMain.handle('upload:pauseTask', async (event, taskId) => {
+  try {
+    const manager = await initUploadManager()
+    await manager.pauseTask(taskId)
+    return { success: true }
+  } catch (error) {
+    console.error('Pause task error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 恢复任务
+ipcMain.handle('upload:resumeTask', async (event, taskId) => {
+  try {
+    const manager = await initUploadManager()
+    await manager.resumeTask(taskId)
+    return { success: true }
+  } catch (error) {
+    console.error('Resume task error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 取消任务
+ipcMain.handle('upload:cancelTask', async (event, taskId) => {
+  try {
+    const manager = await initUploadManager()
+    await manager.cancelTask(taskId)
+    return { success: true }
+  } catch (error) {
+    console.error('Cancel task error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 重试失败文件
+ipcMain.handle('upload:retryFailed', async (event, taskId, filePaths) => {
+  try {
+    const manager = await initUploadManager()
+    const result = await manager.retryFailed(taskId, filePaths)
+    return { success: true, ...result }
+  } catch (error) {
+    console.error('Retry failed error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// 获取进度
+ipcMain.handle('upload:getProgress', async (event, taskId) => {
+  try {
+    const manager = await initUploadManager()
+    const progress = manager.getProgress(taskId)
+    return progress
+  } catch (error) {
+    console.error('Get progress error:', error)
+    return null
+  }
+})
+
+// 获取任务列表
+ipcMain.handle('upload:getTasks', async () => {
+  try {
+    const manager = await initUploadManager()
+    const tasks = manager.getTasks()
+    return tasks
+  } catch (error) {
+    console.error('Get tasks error:', error)
+    return []
+  }
+})
+
+// 检测冲突
+ipcMain.handle('upload:checkConflict', async (event, params) => {
+  try {
+    const manager = await initUploadManager()
+    const result = await manager.checkConflict(params.taskId)
+    return result
+  } catch (error) {
+    console.error('Check conflict error:', error)
+    return { conflicts: [], newFiles: [], identicalFiles: [], error: error.message }
+  }
+})
+
+// 设置并发数
+ipcMain.handle('upload:setConcurrency', async (event, value) => {
+  try {
+    const manager = await initUploadManager()
+    manager.setConcurrency(value)
+    return { success: true }
+  } catch (error) {
+    console.error('Set concurrency error:', error)
+    return { success: false, error: error.message }
   }
 })
