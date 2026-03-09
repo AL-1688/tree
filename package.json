@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder",
-    "electron:start": "electron ."
+    "electron:start": "electron .",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "github",
@@ -30,6 +31,10 @@
     "url": "https://github.com/AL-1688/tree/issues"
   },
   "homepage": "https://github.com/AL-1688/tree#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.13.6",
