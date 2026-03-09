@@ -73,6 +73,22 @@ app.on('activate', () => {
 
 // ========== IPC 处理器 ==========
 
+/**
+ * 统一错误处理函数
+ * @param {Error} error 错误对象
+ * @param {string} operation 操作名称（用于日志）
+ * @returns {Object} 标准化的错误响应
+ */
+function handleIPCError(error, operation) {
+  console.error(`${operation} error:`, error)
+  // 返回通用错误消息，避免泄露敏感信息
+  const safeMessage = error.message.includes('timeout') ? 'Operation timed out' :
+                      error.message.includes('not found') ? 'Resource not found' :
+                      error.message.includes('invalid') ? 'Invalid request' :
+                      'Operation failed'
+  return { success: false, error: safeMessage }
+}
+
 // OAuth 认证相关
 ipcMain.handle('auth:login', async (event, config) => {
   try {
@@ -92,8 +108,7 @@ ipcMain.handle('auth:login', async (event, config) => {
     }
     return result
   } catch (error) {
-    console.error('OAuth login error:', error)
-    return { success: false, error: error.message }
+    return handleIPCError(error, 'OAuth login')
   }
 })
 
@@ -110,7 +125,7 @@ ipcMain.handle('auth:logout', async () => {
     }
     return { success: true }
   } catch (error) {
-    return { success: false, error: error.message }
+    return handleIPCError(error, 'Auth logout')
   }
 })
 
@@ -228,13 +243,41 @@ ipcMain.handle('api:forkRepository', async (event, owner, repo) => {
 
 // 下载相关
 ipcMain.handle('download:gitClone', async (event, cloneUrl, targetPath) => {
-  const { exec } = require('child_process')
+  const { execFile } = require('child_process')
   const path = require('path')
+  const fs = require('fs')
+
+  // 验证 cloneUrl 是否为合法的 Git URL
+  const GIT_URL_PATTERN = /^https?:\/\/[^\s<>"]+\.git$|^(git@)[^\s<>":]+\.git$|^https?:\/\/[^\s<>"]+\/[\w.-]+\/[\w.-]+$/
+  if (!GIT_URL_PATTERN.test(cloneUrl)) {
+    throw new Error('Invalid git clone URL')
+  }
+
+  // 验证并规范化目标路径
+  const normalizedPath = path.normalize(targetPath)
+  if (normalizedPath.includes('..') || path.isAbsolute(normalizedPath) === false && !normalizedPath.startsWith(process.cwd())) {
+    // 使用用户的下载目录作为基准
+    const downloadsPath = app.getPath('downloads')
+    const resolvedPath = path.resolve(downloadsPath, normalizedPath)
+    if (!resolvedPath.startsWith(downloadsPath)) {
+      throw new Error('Invalid target path: path traversal detected')
+    }
+    targetPath = resolvedPath
+  }
+
+  // 确保目标目录存在
+  const targetDir = path.dirname(targetPath)
+  try {
+    await fs.promises.mkdir(targetDir, { recursive: true })
+  } catch (err) {
+    // 目录已存在，忽略错误
+  }
 
   return new Promise((resolve, reject) => {
-    exec(`git clone ${cloneUrl} "${targetPath}"`, (error, stdout, stderr) => {
+    // 使用 execFile 避免 shell 注入
+    execFile('git', ['clone', cloneUrl, targetPath], { timeout: 300000 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`Git clone failed: ${error.message}`))
+        reject(new Error('Git clone failed'))
       } else {
         resolve({ success: true, path: targetPath })
       }
@@ -247,13 +290,38 @@ ipcMain.handle('download:downloadZip', async (event, repoUrl, targetPath) => {
   const fs = require('fs')
   const path = require('path')
 
+  // 验证 repoUrl 格式
+  const GITHUB_REPO_URL_PATTERN = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/
+  if (!GITHUB_REPO_URL_PATTERN.test(repoUrl)) {
+    throw new Error('Invalid repository URL')
+  }
+
+  // 验证并规范化目标路径，防止路径遍历
+  const normalizedPath = path.normalize(targetPath)
+  const downloadsPath = app.getPath('downloads')
+  const resolvedPath = path.resolve(downloadsPath, normalizedPath)
+
+  if (!resolvedPath.startsWith(downloadsPath)) {
+    throw new Error('Invalid target path: path traversal detected')
+  }
+  targetPath = resolvedPath
+
+  // 确保目标目录存在
+  const targetDir = path.dirname(targetPath)
+  try {
+    await fs.promises.mkdir(targetDir, { recursive: true })
+  } catch (err) {
+    // 目录已存在，忽略错误
+  }
+
   const zipUrl = `${repoUrl}/archive/refs/heads/main.zip`
 
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(targetPath)
     https.get(zipUrl, (response) => {
       if (response.statusCode !== 200) {
-        reject(new Error(`Download failed with status ${response.statusCode}`))
+        fs.unlink(targetPath, () => {})
+        reject(new Error('Download failed'))
         return
       }
       response.pipe(file)
@@ -262,8 +330,8 @@ ipcMain.handle('download:downloadZip', async (event, repoUrl, targetPath) => {
         resolve({ success: true, path: targetPath })
       })
     }).on('error', (err) => {
-      fs.unlink(targetPath)
-      reject(err)
+      fs.unlink(targetPath, () => {})
+      reject(new Error('Download failed'))
     })
   })
 })

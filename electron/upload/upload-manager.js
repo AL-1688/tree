@@ -516,9 +516,28 @@ class UploadManager extends EventEmitter {
     task.status = 'paused'
     task.updatedAt = new Date().toISOString()
 
-    // 等待当前上传完成
-    while (this.currentProcessingCount > 0) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+    // 使用 Promise 和事件驱动等待当前上传完成
+    if (this.currentProcessingCount > 0) {
+      await new Promise((resolve) => {
+        const checkComplete = () => {
+          if (this.currentProcessingCount === 0) {
+            this.off('file:complete', checkComplete)
+            this.off('file:error', checkComplete)
+            resolve()
+          }
+        }
+
+        // 监听文件完成/错误事件
+        this.on('file:complete', checkComplete)
+        this.on('file:error', checkComplete)
+
+        // 设置超时防止永久等待
+        setTimeout(() => {
+          this.off('file:complete', checkComplete)
+          this.off('file:error', checkComplete)
+          resolve()
+        }, 30000) // 30 秒超时
+      })
     }
 
     await this.stateStore.saveSnapshot(task)

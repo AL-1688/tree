@@ -467,8 +467,10 @@ function handleRemove(taskId) {
 }
 
 // 监听上传进度
-function handleUploadProgress(event, progressData) {
-  taskProgress.value[progressData.taskId] = progressData
+function handleUploadProgress(progressData) {
+  if (progressData && progressData.taskId) {
+    taskProgress.value[progressData.taskId] = progressData
+  }
 }
 
 onMounted(() => {
@@ -478,6 +480,20 @@ onMounted(() => {
   // 监听进度
   if (window.electronAPI?.upload?.onProgress) {
     window.electronAPI.upload.onProgress(handleUploadProgress)
+  }
+
+  // 监听任务完成
+  if (window.electronAPI?.upload?.onTaskComplete) {
+    window.electronAPI.upload.onTaskComplete((result) => {
+      uploadStore.markTaskComplete(result.taskId, result)
+    })
+  }
+
+  // 监听任务错误
+  if (window.electronAPI?.upload?.onTaskError) {
+    window.electronAPI.upload.onTaskError((error) => {
+      uploadStore.markTaskError(error.taskId, error)
+    })
   }
 })
 

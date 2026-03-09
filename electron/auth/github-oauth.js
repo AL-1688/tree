@@ -3,18 +3,59 @@ const http = require('http')
 const crypto = require('crypto')
 const LocalStorage = require('../storage/local-storage')
 
+// OAuth 回调端口范围
+const PORT_RANGE = { min: 8888, max: 8898 }
+const MAX_PORT_RETRIES = 10
+
 class GitHubOAuth {
   constructor() {
     this.clientId = null
     this.clientSecret = null
     this.localStorage = new LocalStorage()
     this.server = null
-    this.port = 8888
+    this.port = PORT_RANGE.min
+    this.state = null
   }
 
   setConfig(clientId, clientSecret) {
     this.clientId = clientId
     this.clientSecret = clientSecret
+  }
+
+  /**
+   * 尝试在指定端口范围内启动服务器
+   * @returns {Promise<number>} 成功监听的端口
+   */
+  async findAvailablePort() {
+    return new Promise((resolve, reject) => {
+      const tryPort = (port, attemptsLeft) => {
+        if (attemptsLeft <= 0) {
+          reject(new Error('Unable to find available port for OAuth callback'))
+          return
+        }
+
+        const testServer = http.createServer()
+
+        testServer.once('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            // 端口被占用，尝试下一个
+            testServer.close()
+            tryPort(port + 1, attemptsLeft - 1)
+          } else {
+            reject(err)
+          }
+        })
+
+        testServer.once('listening', () => {
+          const boundPort = testServer.address().port
+          testServer.close(() => resolve(boundPort))
+        })
+
+        testServer.listen(port)
+      }
+
+      tryPort(this.port, MAX_PORT_RETRIES)
+    })
   }
 
   async authenticate() {
@@ -29,9 +70,20 @@ class GitHubOAuth {
       }
     }
 
+    // 查找可用端口
+    this.port = await this.findAvailablePort()
+
     return new Promise((resolve, reject) => {
       // 生成随机 state 参数
-      const state = crypto.randomBytes(16).toString('hex')
+      this.state = crypto.randomBytes(16).toString('hex')
+
+      // 设置超时，防止用户长时间不操作
+      const timeout = setTimeout(() => {
+        if (this.server) {
+          this.server.close()
+        }
+        reject(new Error('Authentication timeout'))
+      }, 5 * 60 * 1000) // 5 分钟超时
 
       // 创建本地服务器监听回调
       this.server = http.createServer(async (req, res) => {
@@ -42,8 +94,8 @@ class GitHubOAuth {
             const code = url.searchParams.get('code')
             const returnedState = url.searchParams.get('state')
 
-            if (returnedState !== state) {
-              throw new Error('State mismatch')
+            if (returnedState !== this.state) {
+              throw new Error('State mismatch - possible CSRF attack')
             }
 
             // 使用 code 交换 access token
@@ -56,6 +108,7 @@ class GitHubOAuth {
             res.writeHead(200, { 'Content-Type': 'text/html' })
             res.end(`
               <html>
+                <head><title>Authentication Successful</title></head>
                 <body>
                   <h2>Authentication successful!</h2>
                   <p>You can close this window now.</p>
@@ -64,23 +117,32 @@ class GitHubOAuth {
               </html>
             `)
 
-            // 关闭服务器
+            // 清理
+            clearTimeout(timeout)
             this.server.close()
+            this.state = null
 
             resolve({ success: true, accessToken })
+          } else {
+            // 处理未知路径
+            res.writeHead(404)
+            res.end('Not found')
           }
         } catch (error) {
+          clearTimeout(timeout)
           res.writeHead(400, { 'Content-Type': 'text/html' })
           res.end(`
             <html>
+              <head><title>Authentication Failed</title></head>
               <body>
                 <h2>Authentication failed</h2>
-                <p>${error.message}</p>
+                <p>Please try again.</p>
               </body>
             </html>
           `)
           this.server.close()
-          reject(error)
+          this.state = null
+          reject(new Error('Authentication failed'))
         }
       })
 
@@ -90,10 +152,16 @@ class GitHubOAuth {
         authUrl.searchParams.set('client_id', this.clientId)
         authUrl.searchParams.set('redirect_uri', `http://localhost:${this.port}/callback`)
         authUrl.searchParams.set('scope', 'repo user')
-        authUrl.searchParams.set('state', state)
+        authUrl.searchParams.set('state', this.state)
 
         // 打开浏览器
         shell.openExternal(authUrl.toString())
+      })
+
+      // 处理服务器错误
+      this.server.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(new Error('Failed to start authentication server'))
       })
     })
   }
