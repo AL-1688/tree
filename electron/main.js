@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const GitHubOAuth = require('./auth/github-oauth')
 const GitHubAPI = require('./api/github-api')
 const FolderReader = require('./fs/folder-reader')
@@ -19,7 +20,26 @@ let uploadManager
 // 开发环境检测
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
+// 全局错误处理
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+  if (!isDev) {
+    dialog.showErrorBox('Application Error', error.message)
+  }
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason)
+})
+
 function createWindow() {
+  // 生产环境调试日志
+  if (!isDev) {
+    console.log('App path:', app.getAppPath())
+    console.log('__dirname:', __dirname)
+    console.log('isPackaged:', app.isPackaged)
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -40,12 +60,47 @@ function createWindow() {
     mainWindow.show()
   })
 
+  // 窗口关闭时清理
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
   // 加载应用
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/renderer/index.html'))
+    // 生产环境：检查多个可能的路径
+    const possiblePaths = [
+      // app.asar 内的路径
+      path.join(__dirname, '../dist/renderer/index.html'),
+      path.join(__dirname, 'dist/renderer/index.html'),
+      path.join(app.getAppPath(), 'dist/renderer/index.html'),
+      // extraResources 路径 (resources/ 目录)
+      path.join(process.resourcesPath, 'dist/renderer/index.html')
+    ]
+
+    // 查找存在的路径
+    let foundPath = null
+    for (const p of possiblePaths) {
+      console.log('Checking path:', p)
+      if (fs.existsSync(p)) {
+        foundPath = p
+        console.log('Found renderer at:', p)
+        break
+      }
+    }
+
+    if (foundPath) {
+      mainWindow.loadFile(foundPath).catch(err => {
+        console.error('Failed to load renderer:', err)
+        dialog.showErrorBox('Load Error', `Failed to load application: ${err.message}`)
+      })
+    } else {
+      const errorMsg = 'Could not find index.html. Checked paths:\n' + possiblePaths.join('\n')
+      console.error(errorMsg)
+      dialog.showErrorBox('Startup Error', errorMsg)
+    }
   }
 
   // 初始化模块
