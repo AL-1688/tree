@@ -46,6 +46,12 @@ const routes = [
         meta: { title: '设置' }
       }
     ]
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFoundPage.vue'),
+    meta: { requiresAuth: false }
   }
 ]
 
@@ -65,6 +71,11 @@ router.beforeEach((to, from, next) => {
   } else {
     next()
   }
+})
+
+// 设置页面标题
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title} - GitHub Client` : 'GitHub Client'
 })
 
 export default router

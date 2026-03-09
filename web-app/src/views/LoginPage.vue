@@ -62,6 +62,7 @@
           type="primary"
           href="https://github.com/settings/tokens"
           target="_blank"
+          rel="noopener noreferrer"
         >
           前往生成 Token
         </el-link>

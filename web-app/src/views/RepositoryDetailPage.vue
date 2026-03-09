@@ -90,8 +90,9 @@ const currentFile = ref(null)
 const fileContent = ref(null)
 
 onMounted(async () => {
+  // 先加载仓库信息获取默认分支，再并行加载分支列表和文件树
+  await loadRepository()
   await Promise.all([
-    loadRepository(),
     loadBranches(),
     loadTree()
   ])
@@ -100,6 +101,7 @@ onMounted(async () => {
 async function loadRepository() {
   try {
     repository.value = await githubApi.getRepository(owner.value, repo.value)
+    // 设置默认分支后再加载文件树
     selectedBranch.value = repository.value.default_branch || 'main'
   } catch (error) {
     ElMessage.error(error.message || '获取仓库信息失败')

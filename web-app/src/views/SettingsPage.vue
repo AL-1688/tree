@@ -86,10 +86,8 @@ const tokenRules = {
 }
 
 const tokenDisplay = computed(() => {
-  if (authStore.token) {
-    return authStore.token.substring(0, 8) + '...' + authStore.token.substring(authStore.token.length - 8)
-  }
-  return ''
+  // 安全考虑：不显示任何 token 信息
+  return authStore.token ? '••••••••••••••••' : ''
 })
 
 async function handleUpdateToken() {
