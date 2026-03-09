@@ -8,6 +8,23 @@
         </div>
       </template>
 
+      <!-- OAuth 登录按钮 -->
+      <div v-if="authStore.oauthConfigured" class="oauth-section">
+        <el-button
+          type="primary"
+          size="large"
+          @click="handleOAuthLogin"
+          :loading="oauthLoading"
+          style="width: 100%"
+        >
+          <el-icon style="margin-right: 8px"><Link /></el-icon>
+          使用 GitHub 登录
+        </el-button>
+
+        <el-divider>或使用 Token 登录</el-divider>
+      </div>
+
+      <!-- Token 输入表单 -->
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top">
         <el-form-item label="Personal Access Token" prop="token">
           <el-input
@@ -22,7 +39,7 @@
         <el-form-item>
           <el-button
             type="primary"
-            @click="handleLogin"
+            @click="handleTokenLogin"
             :loading="loading"
             style="width: 100%"
           >
@@ -54,15 +71,17 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
+const oauthLoading = ref(false)
 
 const form = reactive({
   token: ''
@@ -75,7 +94,32 @@ const rules = {
   ]
 }
 
-async function handleLogin() {
+onMounted(() => {
+  // 检查 URL 中是否有错误信息
+  const error = route.query.error
+  if (error) {
+    ElMessage.error(decodeURIComponent(error))
+  }
+})
+
+async function handleOAuthLogin() {
+  oauthLoading.value = true
+  try {
+    const result = await authStore.loginWithOAuth()
+    if (result.success) {
+      ElMessage.success('登录成功')
+      router.push('/')
+    } else {
+      ElMessage.error(result.error || '登录失败')
+    }
+  } catch (error) {
+    ElMessage.error(error.message || '登录失败')
+  } finally {
+    oauthLoading.value = false
+  }
+}
+
+async function handleTokenLogin() {
   if (!formRef.value) return
 
   await formRef.value.validate(async (valid) => {
@@ -83,7 +127,7 @@ async function handleLogin() {
 
     loading.value = true
     try {
-      const result = await authStore.login(form.token)
+      const result = await authStore.loginWithToken(form.token)
       if (result.success) {
         ElMessage.success('登录成功')
         router.push('/')
@@ -125,6 +169,10 @@ async function handleLogin() {
 .subtitle {
   font-size: 14px;
   color: #909399;
+}
+
+.oauth-section {
+  margin-bottom: 20px;
 }
 
 .help-section {

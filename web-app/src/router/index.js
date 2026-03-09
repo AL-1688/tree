@@ -9,6 +9,12 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/auth/callback',
+    name: 'OAuthCallback',
+    component: () => import('@/views/OAuthCallbackPage.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/',
     name: 'Layout',
     component: () => import('@/views/LayoutPage.vue'),
