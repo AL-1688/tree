@@ -1,0 +1,48 @@
+:root {
+  /* 主色调 */
+  --primary-color: #409EFF;
+  --primary-hover: #66B1FF;
+
+  /* 背景色 */
+  --bg-color: #F5F7FA;
+  --card-bg: #FFFFFF;
+  --waveform-bg: #1A1A2E;
+
+  /* 文字颜色 */
+  --text-primary: #303133;
+  --text-secondary: #909399;
+
+  /* 波形颜色 */
+  --waveform-color: #4FC3F7;
+  --region-color: rgba(64, 158, 255, 0.3);
+  --playhead-color: #FF5252;
+
+  /* 字幕标记颜色 */
+  --subtitle-marker: #409EFF;
+  --subtitle-active: #67C23A;
+
+  /* 状态色 */
+  --success-color: #67C23A;
+  --warning-color: #E6A23C;
+  --error-color: #F56C6C;
+
+  /* 差异高亮颜色 */
+  --diff-add-bg: #E6FFEC;
+  --diff-add-text: #22863A;
+  --diff-delete-bg: #FFEBE9;
+  --diff-delete-text: #CB2431;
+  --diff-modify-bg: #FFF5B1;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-color);
+}

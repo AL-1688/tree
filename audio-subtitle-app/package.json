@@ -1,0 +1,38 @@
+{
+  "name": "audio-subtitle-generator",
+  "version": "1.0.0",
+  "description": "音频字幕生成器 - 基于 Whisper 的浏览器端语音识别字幕工具",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "keywords": [
+    "audio",
+    "subtitle",
+    "whisper",
+    "speech-recognition",
+    "vue3"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@xenova/transformers": "^2.17.0",
+    "diff-match-patch": "^1.0.5",
+    "element-plus": "^2.13.5",
+    "mammoth": "^1.6.0",
+    "pinia": "^3.0.4",
+    "uuid": "^9.0.0",
+    "vue": "^3.5.29",
+    "vue-router": "^5.0.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.4",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  }
+}
