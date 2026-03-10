@@ -358,6 +358,29 @@ interface TranscriptChunk {
 }
 ```
 
+#### useDocumentParser
+
+```typescript
+interface DocumentParser {
+  // 状态
+  content: Ref<string>              // 当前使用的内容
+  rawContent: Ref<string>           // 原始内容（未预处理）
+  processedLines: Ref<string[]>     // 预处理后的文本行
+  isLoading: Ref<boolean>
+  error: Ref<string | null>
+  preprocessEnabled: Ref<boolean>   // 是否启用预处理
+
+  // 方法
+  parseFile(file: File): Promise<string>
+  preprocess(text: string): string[]    // 预处理：删除标点并换行
+  togglePreprocess(enabled: boolean): void
+  getProcessedContent(): string          // 获取处理后的内容
+}
+
+// 支持格式
+type SupportedFormat = 'txt' | 'doc' | 'docx'
+```
+
 #### useTextAligner
 
 ```typescript
@@ -895,6 +918,50 @@ function alignText(transcriptChunks, documentText) {
 
   return alignedSubtitles;
 }
+```
+
+### 文档预处理算法
+
+删除文档中的标点符号并在原位置换行：
+
+```javascript
+/**
+ * 文档预处理：删除标点符号并换行
+ * @param text 原始文档文本
+ * @returns 处理后的文本行数组
+ */
+function preprocessDocument(text) {
+  // 定义需要删除的标点符号（中文标点）
+  const punctuationRegex = /[，。？！]/g;
+
+  // 在标点符号位置插入换行符，然后删除标点符号
+  const processedText = text.replace(punctuationRegex, '\n');
+
+  // 按换行符分割，过滤空行
+  const lines = processedText
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  return lines;
+}
+
+/**
+ * 预处理后重新合并文本（用于对齐）
+ * @param lines 预处理后的文本行数组
+ * @returns 合并后的文本（无标点）
+ */
+function mergeProcessedLines(lines) {
+  return lines.join('');
+}
+
+// 示例用法
+const originalText = '大家好，今天天气很好。我们来讨论人工智能！这有什么问题吗？';
+const processedLines = preprocessDocument(originalText);
+// 结果: ['大家好', '今天天气很好', '我们来讨论人工智能', '这有什么问题吗']
+
+const mergedText = mergeProcessedLines(processedLines);
+// 结果: '大家好今天天气很好我们来讨论人工智能这有什么问题吗'
 ```
 
 ### 波形渲染优化
