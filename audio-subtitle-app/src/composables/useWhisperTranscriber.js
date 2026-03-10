@@ -59,8 +59,8 @@ export function useWhisperTranscriber() {
   // 检查本地模型是否存在
   async function checkLocalModelExists(modelName) {
     try {
-      // 检查关键文件是否存在
-      const response = await fetch(`/models/Xenova/whisper-${modelName}/onnx/model_quantized.onnx`, {
+      // 检查 encoder 模型文件是否存在（Xenova 模型使用分离的 encoder/decoder）
+      const response = await fetch(`/models/Xenova/whisper-${modelName}/onnx/encoder_model_quantized.onnx`, {
         method: 'HEAD'
       });
       return response.ok;
