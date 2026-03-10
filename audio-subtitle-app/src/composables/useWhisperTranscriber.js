@@ -4,14 +4,15 @@ import { useTranscriptStore } from '../stores/transcriptStore.js';
 import { useSubtitleStore } from '../stores/subtitleStore.js';
 
 // 配置 Transformers.js
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+// 注意：本地模型需要在 public/models/ 目录下预先放置模型文件
+env.allowLocalModels = true;
+env.localModelPath = '/models/';
+env.useBrowserCache = true;  // 使用浏览器缓存（IndexedDB）
 
-// CDN 源列表，按优先级排序
+// CDN 源列表，按优先级排序（针对中国用户优化）
 const CDN_SOURCES = [
   { host: 'https://hf-mirror.com', name: 'HF Mirror (China)' },
   { host: 'https://huggingface.co', name: 'Hugging Face' },
-  { host: 'https://cdn.jsdelivr.net/gh/huggingface', name: 'jsDelivr CDN' },
 ];
 
 let currentCdnIndex = 0;
@@ -55,8 +56,21 @@ export function useWhisperTranscriber() {
     return false;
   }
 
-  // 加载模型（带重试机制）
-  async function loadModel(modelName = 'tiny', retryCount = 0) {
+  // 检查本地模型是否存在
+  async function checkLocalModelExists(modelName) {
+    try {
+      // 检查关键文件是否存在
+      const response = await fetch(`/models/Xenova/whisper-${modelName}/onnx/model_quantized.onnx`, {
+        method: 'HEAD'
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  // 加载模型（支持本地模型和 CDN）
+  async function loadModel(modelName = 'tiny', retryCount = 0, forceRemote = false) {
     isModelLoading.value = true;
     currentModel.value = modelName;
     loadProgress.value = 0;
@@ -65,11 +79,34 @@ export function useWhisperTranscriber() {
     try {
       transcriptStore.setProgress(5);
 
-      console.log(`Loading Whisper model: ${modelName}, attempt: ${retryCount + 1}`);
+      console.log(`Loading Whisper model: ${modelName}, attempt: ${retryCount + 1}, forceRemote: ${forceRemote}`);
+
+      let modelPath;
+      let useLocal = false;
+
+      // 检查本地模型
+      if (!forceRemote) {
+        const localExists = await checkLocalModelExists(modelName);
+        if (localExists) {
+          useLocal = true;
+          modelPath = `/models/Xenova/whisper-${modelName}`;
+          env.remoteHost = '';
+          console.log(`Using local model: ${modelPath}`);
+          statusMessage.value = '正在加载本地模型...';
+        }
+      }
+
+      // 使用 CDN
+      if (!useLocal) {
+        modelPath = `Xenova/whisper-${modelName}`;
+        configureCdn(currentCdnIndex);
+        console.log(`Using CDN: ${CDN_SOURCES[currentCdnIndex].name}`);
+        statusMessage.value = `正在从 ${CDN_SOURCES[currentCdnIndex].name} 下载模型...`;
+      }
 
       transcriber.value = await pipeline(
         'automatic-speech-recognition',
-        `Xenova/whisper-${modelName}`,
+        modelPath,
         {
           progress_callback: (progress) => {
             console.log('Model loading progress:', progress);
@@ -77,7 +114,9 @@ export function useWhisperTranscriber() {
               const percent = Math.round((progress.loaded / progress.total) * 100);
               loadProgress.value = percent;
               transcriptStore.setProgress(Math.min(95, 5 + percent * 0.9));
-              statusMessage.value = `正在下载模型 (${percent}%)...`;
+              statusMessage.value = useLocal
+                ? `正在加载本地模型 (${percent}%)...`
+                : `正在下载模型 (${percent}%)...`;
             } else if (progress.status === 'done') {
               loadProgress.value = 100;
               transcriptStore.setProgress(100);
@@ -94,12 +133,18 @@ export function useWhisperTranscriber() {
     } catch (err) {
       console.error('Model loading error:', err);
 
-      // 检查是否可以重试
+      // 如果使用本地模型失败，尝试 CDN
+      if (useLocal && retryCount === 0) {
+        console.log('Local model failed, trying CDN...');
+        currentCdnIndex = 0;
+        return loadModel(modelName, retryCount + 1, true);
+      }
+
+      // 尝试切换 CDN
       if (retryCount < MAX_RETRY_ATTEMPTS - 1) {
-        // 尝试切换 CDN
         if (switchToNextCdn()) {
-          statusMessage.value = `切换 CDN 源重试...`;
-          return loadModel(modelName, retryCount + 1);
+          statusMessage.value = `切换到 ${CDN_SOURCES[currentCdnIndex].name} 重试...`;
+          return loadModel(modelName, retryCount + 1, true);
         }
       }
 
