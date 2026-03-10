@@ -1,6 +1,35 @@
 import { ref } from 'vue';
+import { pipeline, env } from '@xenova/transformers';
 import { useTranscriptStore } from '../stores/transcriptStore.js';
 import { useSubtitleStore } from '../stores/subtitleStore.js';
+
+// 配置 Transformers.js
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+
+// CDN 源列表，按优先级排序
+const CDN_SOURCES = [
+  { host: 'https://hf-mirror.com', name: 'HF Mirror (China)' },
+  { host: 'https://huggingface.co', name: 'Hugging Face' },
+  { host: 'https://cdn.jsdelivr.net/gh/huggingface', name: 'jsDelivr CDN' },
+];
+
+let currentCdnIndex = 0;
+let modelLoadAttempts = 0;
+const MAX_RETRY_ATTEMPTS = 3;
+
+// 配置当前 CDN
+function configureCdn(index = 0) {
+  if (index < CDN_SOURCES.length) {
+    env.remoteHost = CDN_SOURCES[index].host;
+    console.log(`Using CDN: ${CDN_SOURCES[index].name} (${CDN_SOURCES[index].host})`);
+    return true;
+  }
+  return false;
+}
+
+// 初始化 CDN 配置
+configureCdn(currentCdnIndex);
 
 export function useWhisperTranscriber() {
   const transcriptStore = useTranscriptStore();
@@ -10,38 +39,98 @@ export function useWhisperTranscriber() {
   const modelLoaded = ref(false);
   const currentModel = ref('tiny');
   const transcriber = ref(null);
+  const loadProgress = ref(0);
+  const statusMessage = ref('');
 
   // 可用模型列表
   const availableModels = ['tiny', 'base', 'small', 'medium'];
 
-  // 加载模型
-  async function loadModel(modelName = 'tiny') {
+  // 切换到下一个 CDN 源
+  function switchToNextCdn() {
+    currentCdnIndex++;
+    if (currentCdnIndex < CDN_SOURCES.length) {
+      configureCdn(currentCdnIndex);
+      return true;
+    }
+    return false;
+  }
+
+  // 加载模型（带重试机制）
+  async function loadModel(modelName = 'tiny', retryCount = 0) {
     isModelLoading.value = true;
     currentModel.value = modelName;
+    loadProgress.value = 0;
+    statusMessage.value = '正在初始化...';
 
     try {
-      const { pipeline } = await import('@xenova/transformers');
+      transcriptStore.setProgress(5);
+
+      console.log(`Loading Whisper model: ${modelName}, attempt: ${retryCount + 1}`);
 
       transcriber.value = await pipeline(
         'automatic-speech-recognition',
         `Xenova/whisper-${modelName}`,
         {
           progress_callback: (progress) => {
-            if (progress.status === 'progress') {
-              transcriptStore.setProgress(Math.round(progress.progress));
+            console.log('Model loading progress:', progress);
+            if (progress.status === 'progress' && progress.total > 0) {
+              const percent = Math.round((progress.loaded / progress.total) * 100);
+              loadProgress.value = percent;
+              transcriptStore.setProgress(Math.min(95, 5 + percent * 0.9));
+              statusMessage.value = `正在下载模型 (${percent}%)...`;
+            } else if (progress.status === 'done') {
+              loadProgress.value = 100;
+              transcriptStore.setProgress(100);
+              statusMessage.value = '模型加载完成';
             }
           },
         }
       );
 
       modelLoaded.value = true;
+      modelLoadAttempts = 0;
+      statusMessage.value = '模型已就绪';
       return transcriber.value;
     } catch (err) {
-      transcriptStore.setError(`模型加载失败: ${err.message}`);
-      throw err;
+      console.error('Model loading error:', err);
+
+      // 检查是否可以重试
+      if (retryCount < MAX_RETRY_ATTEMPTS - 1) {
+        // 尝试切换 CDN
+        if (switchToNextCdn()) {
+          statusMessage.value = `切换 CDN 源重试...`;
+          return loadModel(modelName, retryCount + 1);
+        }
+      }
+
+      // 所有重试都失败
+      const errorMsg = getDetailedErrorMessage(err);
+      transcriptStore.setError(errorMsg);
+      statusMessage.value = `加载失败: ${err.message}`;
+      throw new Error(errorMsg);
     } finally {
       isModelLoading.value = false;
     }
+  }
+
+  // 获取详细的错误信息
+  function getDetailedErrorMessage(err) {
+    const errorMsg = err.message || '未知错误';
+
+    if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+      return `网络连接失败，无法下载模型。请检查网络连接后重试。建议使用 VPN 或代理访问 Hugging Face。`;
+    }
+    if (errorMsg.includes('out of memory') || errorMsg.includes('memory')) {
+      return `内存不足，请尝试使用更小的模型 (tiny) 或关闭其他应用后重试。`;
+    }
+    if (errorMsg.includes('timeout')) {
+      return `连接超时，请检查网络连接后重试。`;
+    }
+    if (errorMsg.includes('CORS')) {
+      return `跨域请求被阻止，请联系管理员配置服务器。`;
+    }
+
+    return `模型加载失败: ${errorMsg}`;
   }
 
   // 执行语音识别
@@ -52,15 +141,27 @@ export function useWhisperTranscriber() {
 
     transcriptStore.setTranscribing(true);
     transcriptStore.setProgress(0);
+    statusMessage.value = '正在处理音频...';
 
     try {
+      // 验证音频数据
+      if (!audioBuffer || !audioBuffer.getChannelData) {
+        throw new Error('无效的音频数据');
+      }
+
       // 将 AudioBuffer 转换为适合 Whisper 的格式
       const audioData = audioBuffer.getChannelData(0);
       const sampleRate = audioBuffer.sampleRate;
 
+      console.log(`Audio info: sampleRate=${sampleRate}, length=${audioData.length}`);
+
       // Whisper 需要 16kHz 采样率
       const targetSampleRate = 16000;
       const resampledData = resampleAudio(audioData, sampleRate, targetSampleRate);
+
+      console.log(`Resampled audio: ${resampledData.length} samples at ${targetSampleRate}Hz`);
+
+      statusMessage.value = '正在进行语音识别...';
 
       // 执行识别
       const result = await transcriber.value(resampledData, {
@@ -71,8 +172,14 @@ export function useWhisperTranscriber() {
         task: 'transcribe',
       });
 
+      console.log('Transcription result:', result);
+
       // 处理识别结果
       const chunks = processTranscriptResult(result);
+
+      if (chunks.length === 0) {
+        throw new Error('未能识别出任何内容，请检查音频是否包含清晰的语音');
+      }
 
       // 保存到 store
       transcriptStore.setTranscript({
@@ -85,13 +192,17 @@ export function useWhisperTranscriber() {
       // 自动生成字幕
       generateSubtitlesFromChunks(chunks);
 
+      statusMessage.value = '识别完成';
       return {
         text: result.text,
         chunks,
       };
     } catch (err) {
-      transcriptStore.setError(`语音识别失败: ${err.message}`);
-      throw err;
+      console.error('Transcription error:', err);
+      const errorMsg = getDetailedErrorMessage(err);
+      transcriptStore.setError(errorMsg);
+      statusMessage.value = `识别失败: ${err.message}`;
+      throw new Error(errorMsg);
     } finally {
       transcriptStore.setTranscribing(false);
     }
@@ -99,6 +210,10 @@ export function useWhisperTranscriber() {
 
   // 重采样音频
   function resampleAudio(audioData, originalRate, targetRate) {
+    if (originalRate === targetRate) {
+      return audioData;
+    }
+
     const ratio = originalRate / targetRate;
     const newLength = Math.floor(audioData.length / ratio);
     const result = new Float32Array(newLength);
@@ -117,21 +232,24 @@ export function useWhisperTranscriber() {
 
     if (result.chunks) {
       result.chunks.forEach((chunk, index) => {
-        chunks.push({
-          id: `chunk_${Date.now()}_${index}`,
-          text: chunk.text.trim(),
-          start: chunk.timestamp[0] || 0,
-          end: chunk.timestamp[1] || 0,
-          confidence: 1,
-        });
+        const text = chunk.text ? chunk.text.trim() : '';
+        if (text) {
+          chunks.push({
+            id: `chunk_${Date.now()}_${index}`,
+            text,
+            start: chunk.timestamp?.[0] ?? 0,
+            end: chunk.timestamp?.[1] ?? 0,
+            confidence: 1,
+          });
+        }
       });
-    } else if (result.timestamp) {
-      // 处理单个时间戳的情况
+    } else if (result.text) {
+      // 处理没有 chunks 的情况
       chunks.push({
         id: `chunk_${Date.now()}_0`,
         text: result.text.trim(),
-        start: result.timestamp[0] || 0,
-        end: result.timestamp[1] || 0,
+        start: result.timestamp?.[0] ?? 0,
+        end: result.timestamp?.[1] ?? 0,
         confidence: 1,
       });
     }
@@ -154,12 +272,22 @@ export function useWhisperTranscriber() {
     subtitleStore.setSubtitles(subtitles);
   }
 
+  // 重试加载
+  async function retry() {
+    currentCdnIndex = 0;
+    configureCdn(currentCdnIndex);
+    return loadModel(currentModel.value, 0);
+  }
+
   return {
     isModelLoading,
     modelLoaded,
     currentModel,
     availableModels,
+    loadProgress,
+    statusMessage,
     loadModel,
     transcribe,
+    retry,
   };
 }

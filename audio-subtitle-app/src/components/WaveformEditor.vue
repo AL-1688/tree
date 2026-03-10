@@ -1,6 +1,6 @@
 <template>
   <div class="waveform-editor" ref="containerRef">
-    <canvas ref="canvasRef" class="waveform-canvas"></canvas>
+    <canvas ref="canvasRef" class="waveform-canvas" @click="handleCanvasClick"></canvas>
     <div class="subtitle-markers" v-if="subtitles.length > 0">
       <div
         v-for="subtitle in subtitles"

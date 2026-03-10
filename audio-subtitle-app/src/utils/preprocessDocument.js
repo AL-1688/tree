@@ -1,4 +1,14 @@
 /**
+ * 移除文本中的标点符号
+ * @param text 原始文本
+ * @returns 无标点的文本
+ */
+export function removePunctuation(text) {
+  const punctuationRegex = /[，。？！、；：""''（）【】《》\s]/g;
+  return text.replace(punctuationRegex, '');
+}
+
+/**
  * 文档预处理：删除标点符号并换行
  * @param text 原始文档文本
  * @returns 处理后的文本行数组

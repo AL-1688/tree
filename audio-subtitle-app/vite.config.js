@@ -5,14 +5,12 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
+    host: '0.0.0.0',
     allowedHosts: ['.monkeycode-ai.online']
   },
   resolve: {
     alias: {
       '@': '/src'
     }
-  },
-  optimizeDeps: {
-    exclude: ['@xenova/transformers']
   }
 });

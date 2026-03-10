@@ -67,7 +67,43 @@
                 :percentage="transcriptStore.progress"
                 :status="transcriptStore.progress === 100 ? 'success' : ''"
               />
-              <p>正在识别中，请稍候...</p>
+              <p>{{ statusMessage || '正在识别中，请稍候...' }}</p>
+            </div>
+          </el-card>
+        </section>
+
+        <!-- 错误状态 -->
+        <section v-if="transcriptStore.error && !transcriptStore.isTranscribing" class="error-section">
+          <el-card>
+            <div class="error-status">
+              <el-alert
+                :title="transcriptStore.error"
+                type="error"
+                show-icon
+                :closable="false"
+              />
+              <div class="error-actions">
+                <el-button type="primary" @click="handleRetry" :loading="isRetrying">
+                  重试
+                </el-button>
+                <el-button @click="handleChangeModel">
+                  切换模型
+                </el-button>
+              </div>
+              <div class="error-tips">
+                <p>可能的原因：</p>
+                <ul>
+                  <li>网络连接不稳定，无法下载模型</li>
+                  <li>当前 CDN 源访问受限</li>
+                  <li>浏览器内存不足</li>
+                </ul>
+                <p>建议：</p>
+                <ul>
+                  <li>使用 VPN 或代理访问</li>
+                  <li>尝试切换模型（tiny 最小最快）</li>
+                  <li>刷新页面后重试</li>
+                </ul>
+              </div>
             </div>
           </el-card>
         </section>
@@ -118,6 +154,7 @@
             @edit="handleSubtitleEdit"
             @delete="handleSubtitleDelete"
             @add="handleSubtitleAdd"
+            @update="handleSubtitleUpdate"
           />
         </section>
 
@@ -162,7 +199,7 @@ const documentStore = useDocumentStore();
 // Composables
 const { loadAudio, play, pause, seek, dispose } = useAudioProcessor();
 const { parseFile, togglePreprocess } = useDocumentParser();
-const { loadModel, transcribe } = useWhisperTranscriber();
+const { loadModel, transcribe, retry, isModelLoading, statusMessage, loadProgress } = useWhisperTranscriber();
 const { align, isAligning } = useTextAligner();
 
 // State
@@ -247,6 +284,14 @@ function handleSubtitleDelete(id) {
   subtitleStore.deleteSubtitle(id);
 }
 
+function handleSubtitleUpdate(data) {
+  subtitleStore.updateSubtitle(data.id, {
+    startTime: data.startTime,
+    endTime: data.endTime,
+    text: data.text,
+  });
+}
+
 function handleSubtitleAdd() {
   // 添加新字幕
   subtitleStore.addSubtitle({
@@ -298,12 +343,34 @@ onUnmounted(() => {
 
 .document-section,
 .transcribe-section,
+.error-section,
 .playback-section,
 .waveform-section,
 .align-section,
 .subtitle-section,
 .export-section {
   margin-bottom: 24px;
+}
+
+.error-status {
+  padding: 20px;
+}
+
+.error-actions {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.error-tips {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: #fdf6ec;
+  border-radius: 4px;
+}
+
+.error-tips ul {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
 }
 
 .card-header {
